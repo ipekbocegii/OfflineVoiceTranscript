@@ -1,0 +1,5 @@
+# Python dependencies required to run the Offline Speech-to-Text processor.
+# Run 'pip install -r requirements.txt' to install all of them.
+
+pydub
+openai-whisper
