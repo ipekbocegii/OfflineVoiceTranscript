@@ -1,129 +1,154 @@
 import os
 
-
+# --- Configuration Load and FFmpeg Path Setup ---
 try:
+    # Attempt to load the personal FFmpeg path from local_config.py (ignored by Git)
     from local_config import FFMPEG_BIN_PATH as ffmpeg_bin
 
     if not os.path.isdir(ffmpeg_bin):
-        print(f"UYARI: local_config'teki yol geçersiz. Genel PATH kullanılıyor.")
+        # Warning if path is invalid, falls back to system PATH
+        print(f"WARNING: Invalid path in local_config. Falling back to system PATH.")
     else:
-        # Yol geçerliyse, PATH'e ekle
+        # If valid, prepend the FFmpeg directory to the system PATH
         os.environ["PATH"] = ffmpeg_bin + os.pathsep + os.environ.get("PATH", "")
 except ImportError:
-    print("UYARI: local_config.py bulunamadı. FFmpeg'in sistem PATH'inizde yüklü olduğundan emin olun.")
-
-
-
+    # This runs for users who cloned the repo (no local_config.py)
+    print("WARNING: local_config.py not found. Ensure FFmpeg is installed and added to your system PATH.")
 
 from pydub import AudioSegment
 import whisper
 
-def ses_dosyasini_texte_cevir(
-    dosya_adi,
-    cikti_dosya=None,
-    parca_suresi=60,
-    model_adi="small",
-    on_progress=None,
-    on_status=None,
+
+def transcribe_audio_file(
+        file_path,
+        output_file=None,
+        chunk_duration=60,
+        model_name="small",
+        on_progress=None,
+        on_status=None,
 ):
-    # (Artık PATH içindeki ffmpeg/ffprobe kullanılacağından özel atama zorunlu değil)
-    # Giriş dosyası yolu: Önce verilen yolu dene; yoksa bu dosyanın klasörüne göre çöz
-    if not os.path.isabs(dosya_adi) and not os.path.exists(dosya_adi):
+    # Resolve file path: Check absolute path, then relative to the script's directory
+    if not os.path.isabs(file_path) and not os.path.exists(file_path):
         script_dir = os.path.dirname(__file__)
-        candidate = os.path.join(script_dir, dosya_adi)
+        candidate = os.path.join(script_dir, file_path)
         if os.path.exists(candidate):
-            dosya_adi = candidate
+            file_path = candidate
 
-    if not os.path.exists(dosya_adi):
-        raise FileNotFoundError(f"Audio file not found at: {dosya_adi}")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Audio file not found at: {file_path}")
 
-    # Eğer çıktı dosyası belirtilmemişse, giriş ses dosyasının adıyla aynı tabanda .txt üret
-    if cikti_dosya is None:
-        giris_klasoru = os.path.dirname(dosya_adi)
-        giris_tabani = os.path.splitext(os.path.basename(dosya_adi))[0]
-        cikti_dosya = os.path.join(giris_klasoru, f"{giris_tabani}.txt") if giris_klasoru else f"{giris_tabani}.txt"
+    # If no output file is specified, create a .txt file next to the input file
+    if output_file is None:
+        input_dir = os.path.dirname(file_path)
+        input_base = os.path.splitext(os.path.basename(file_path))[0]
+        output_file = os.path.join(input_dir, f"{input_base}.txt") if input_dir else f"{input_base}.txt"
 
+    # Status update: Loading audio
+    status_message = "Loading audio file…"
     if on_status:
         try:
-            on_status("Ses dosyası yükleniyor…")
+            on_status(status_message)
         except Exception:
             pass
     else:
-        print("Ses dosyası yükleniyor...")
+        print(status_message)
+
     try:
-        # m4a için format belirtmek daha güvenli olabilir
-        audio = AudioSegment.from_file(dosya_adi, format="m4a")
+        # Load audio using pydub, specifying format for robustness (assuming m4a from your example)
+        audio = AudioSegment.from_file(file_path, format="m4a")
     except Exception as e:
-        raise Exception(f"Failed to load audio file: {str(e)}")
+        raise Exception(f"Failed to load audio file. Ensure FFmpeg is working and the format is correct: {str(e)}")
 
-    parca_uzunlugu_ms = parca_suresi * 1000
-    toplam_parca = (len(audio) + parca_uzunlugu_ms - 1) // parca_uzunlugu_ms
+    # Calculate chunks
+    chunk_length_ms = chunk_duration * 1000
+    total_chunks = (len(audio) + chunk_length_ms - 1) // chunk_length_ms
+
+    status_message = f"Total {total_chunks} chunks detected."
     if on_status:
         try:
-            on_status(f"Toplam {toplam_parca} parça bulundu.")
+            on_status(status_message)
         except Exception:
             pass
     else:
-        print(f"Toplam {toplam_parca} parça bulundu.")
+        print(status_message)
 
+    # Status update: Loading model
+    status_message = f"Loading Whisper '{model_name}' model…"
     if on_status:
         try:
-            on_status(f"Whisper '{model_adi}' modeli yükleniyor…")
+            on_status(status_message)
         except Exception:
             pass
     else:
-        print(f"Whisper '{model_adi}' modeli yükleniyor...")
-    model = whisper.load_model(model_adi)
+        print(status_message)
+    model = whisper.load_model(model_name)
 
     full_text = ""
-    for idx, start in enumerate(range(0, len(audio), parca_uzunlugu_ms), start=1):
-        parca = audio[start:start + parca_uzunlugu_ms]
-        parca_dosya = f"temp_chunk_{idx}.wav"
-        parca.export(parca_dosya, format="wav")
+    for idx, start in enumerate(range(0, len(audio), chunk_length_ms), start=1):
+        # Slice the audio chunk
+        chunk = audio[start:start + chunk_length_ms]
+        temp_chunk_file = f"temp_chunk_{idx}.wav"
+
+        # Export chunk for Whisper processing (Whisper prefers WAV)
+        chunk.export(temp_chunk_file, format="wav")
+
+        # Status update: Processing current chunk
+        status_message = f"Processing chunk {idx} / {total_chunks}…"
         if on_status:
             try:
-                on_status(f"Parça {idx} / {toplam_parca} işleniyor…")
+                on_status(status_message)
             except Exception:
                 pass
         else:
-            print(f"Parça {idx} işleniyor...")
+            print(status_message)
+
         if on_progress:
             try:
-                on_progress(toplam_parca, idx - 1)
+                on_progress(total_chunks, idx - 1)
             except Exception:
                 pass
+
         try:
-            result = model.transcribe(parca_dosya, language="tr")
+            # Perform transcription on the temporary file, specifying Turkish language
+            result = model.transcribe(temp_chunk_file, language="tr")
             full_text += result.get("text", "").strip() + " "
         except Exception as e:
+            error_message = f"Error processing chunk {idx}: {e}"
             if on_status:
                 try:
-                    on_status(f"Parça {idx} işlenirken hata: {e}")
+                    on_status(error_message)
                 except Exception:
                     pass
             else:
-                print(f"Parça {idx} işlenirken hata: {e}")
+                print(error_message)
         finally:
-            if os.path.exists(parca_dosya):
-                os.remove(parca_dosya)
+            # Clean up: Remove the temporary file regardless of success/failure
+            if os.path.exists(temp_chunk_file):
+                os.remove(temp_chunk_file)
+
         if on_progress:
             try:
-                on_progress(toplam_parca, idx)
+                on_progress(total_chunks, idx)
             except Exception:
                 pass
 
-    with open(cikti_dosya, "w", encoding="utf-8") as f:
+    # Write the final combined text to the output file
+    with open(output_file, "w", encoding="utf-8") as f:
         f.write(full_text)
+
+    status_message = f"Transcription saved to '{output_file}'."
     if on_status:
         try:
-            on_status(f"Metin '{cikti_dosya}' dosyasına kaydedildi.")
+            on_status(status_message)
         except Exception:
             pass
     else:
-        print(f"Metin '{cikti_dosya}' dosyasına kaydedildi.")
+        print(status_message)
+
 
 if __name__ == "__main__":
     try:
-        ses_dosyasini_texte_cevir("kocamuk.m4a", parca_suresi=60, model_adi="small")
+        # Example usage: Change 'voice.m4a' to your test file path
+        transcribe_audio_file("voice.m4a", chunk_duration=60, model_name="small")
     except Exception as e:
-        print(f"Hata oluştu: {e}")
+        print(f"An error occurred: {e}")
