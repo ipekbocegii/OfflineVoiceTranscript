@@ -1,11 +1,19 @@
 import os
 
-# FFmpeg bin klasörünü PATH'e ekle (Çalıştırmadan önce bu yolu kendi bilgisayarınıza göre değiştirin)
-ffmpeg_bin = r"C:\Users\fatih\Desktop\SesDosyasi\doslayar\ffmpeg-8.0-essentials_build\bin"
-if not os.path.isdir(ffmpeg_bin):
-    raise FileNotFoundError(f"FFmpeg bin klasörü bulunamadı: {ffmpeg_bin}")
 
-os.environ["PATH"] = ffmpeg_bin + os.pathsep + os.environ.get("PATH", "")
+try:
+    from local_config import FFMPEG_BIN_PATH as ffmpeg_bin
+
+    if not os.path.isdir(ffmpeg_bin):
+        print(f"UYARI: local_config'teki yol geçersiz. Genel PATH kullanılıyor.")
+    else:
+        # Yol geçerliyse, PATH'e ekle
+        os.environ["PATH"] = ffmpeg_bin + os.pathsep + os.environ.get("PATH", "")
+except ImportError:
+    print("UYARI: local_config.py bulunamadı. FFmpeg'in sistem PATH'inizde yüklü olduğundan emin olun.")
+
+
+
 
 from pydub import AudioSegment
 import whisper

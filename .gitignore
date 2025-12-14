@@ -21,8 +21,9 @@ __pycache__/
 # Files generated when the code runs (outputs, temporary chunks).
 # ----------------------------------------------------------------------
 
-# Output text files (e.g., summary.txt, meeting_log.txt)
-*.txt
+# Ignore generated output txt files
+output*.txt
+*_log.txt
 
 # Temporary audio files created during chunk processing
 temp_chunk_*.wav
@@ -32,4 +33,7 @@ temp_chunk_*.wav
 # Exclude large audio test files to keep the repository small.
 # ----------------------------------------------------------------------
 # Exclude all contents of the Voices directory (if they are large/private)
-Voices/
+#voices/
+
+# Kişisel/Yerel Ayarlar Dosyası
+local_config.py
